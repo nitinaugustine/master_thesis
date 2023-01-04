@@ -1,54 +1,161 @@
-# BLEMISH CODE
+import cv2
+import numpy as np
+import matplotlib.pyplot as plt
+import time
 
-bk = np.ones((374, 1238,3),dtype=np.uint8)*255
-blem = cv2.circle(bk,(619,187),25,(0,0,0),-1)
-blem = cv2.circle(bk,(900,187),25,(0,0,0),-1)
-blem = cv2.circle(bk,(338,187),25,(0,0,0),-1)
-blem = cv2.circle(bk,(619,287),25,(0,0,0),-1)
-blem = cv2.circle(bk,(619,87),25,(0,0,0),-1)
-plt.imshow(blem)
-plt.show()
+def gaus2d(x, y, sx, peak):
+    """
+    function that defines the super gaussian
+    in 2d.
+    sx -- defines the spread of the gaussian
+    peak -- defines the peak contrast intensity
+    the power of power_x and power_y defines the level of 
+    flat headedness.
 
-# read the image
-image_bgr = blem.copy()
-# get the image dimensions (height, width and channels)
-h, w, c = bg.shape
-# append Alpha channel -- required for BGRA (Blue, Green, Red, Alpha)
-image_bgra = np.concatenate([image_bgr, np.full((h, w, 1), 255, dtype=np.uint8)], axis=-1)
-# create a mask where white pixels ([255, 255, 255]) are True
-white = np.all(image_bgr == [255, 255, 255], axis=-1)
-# change the values of Alpha to 0 for all the white pixels
-image_bgra[white, -1] = 0
-# save the image
-bg = cv2.GaussianBlur(image_bgra,ksize=(21,21),sigmaX=20,sigmaY=20)
-cv2.imwrite('H:/THI- MAPE/Master Thesis/resources/whitebk.png', bg)
+    for more information on super_gaussian function
+    check https://www.hellenicaworld.com/Science/Mathematics/en/GaussianFunction.html
+    """
+    sy=sx
+    power_x = x**2. / (2. * sx**2.)
+    power_y = y**2. / (2. * sy**2.)
+    P=2.7
+    return peak *(1. / (2. * np.pi * sx * sy) * np.exp(-(power_x + power_y)**P))
 
-background = cv2.imread('H:/THI- MAPE/Master Thesis/resources/training/image_2/000017.png')
-overlay = cv2.imread('H:/THI- MAPE/Master Thesis/resources/whitebk.png', cv2.IMREAD_UNCHANGED)  # IMREAD_UNCHANGED => open image with the alpha channel
+def gaussian(size,int_drop):
 
-# separate the alpha channel from the color channels
-alpha_channel = overlay[:, :, 3] / 255 # convert from 0-255 to 0.0-1.0
-overlay_colors = overlay[:, :, :3]
+    """
+    function that defines the mesh for creating
+    the 2d gaussain
+    the space is created in accordance with the
+    size of the blemish
+    sx -- defines the standard deviation that controls the
+          spread of the gaussian
+    """
 
-# To take advantage of the speed of numpy and apply transformations to the entire image with a single operation
-# the arrays need to be the same shape. However, the shapes currently looks like this:
-#    - overlay_colors shape:(width, height, 3)  3 color values for each pixel, (red, green, blue)
-#    - alpha_channel  shape:(width, height, 1)  1 single alpha value for each pixel
-# We will construct an alpha_mask that has the same shape as the overlay_colors by duplicate the alpha channel
-# for each color so there is a 1:1 alpha channel for each color channel
-alpha_mask = np.dstack((alpha_channel, alpha_channel, alpha_channel))
+    x = np.linspace(-1, 1, size)
+    y = np.linspace(-1, 1, size)
+    x, y = np.meshgrid(x, y) # get 2D variables instead of 1D
+    spread = 0.5
+    intensity_drop = int_drop
+    print('intensity_drop',intensity_drop)
+    z = gaus2d(x, y, spread, intensity_drop)
+    blemish = 1-z
 
-# The background image is larger than the overlay so we'll take a subsection of the background that matches the
-# dimensions of the overlay.
-# NOTE: For simplicity, the overlay is applied to the top-left corner of the background(0,0). An x and y offset
-# could be used to place the overlay at any position on the background.
-h, w = overlay.shape[:2]
-background_subsection = background[0:h, 0:w]
+    #plt.imshow(blemish,cmap='gray')
+    #plt.show()
+    
+    return blemish
 
-# combine the background with the overlay image weighted by alpha
-composite = background_subsection * (1 - alpha_mask) + overlay_colors * alpha_mask
+def diff_corrector(value1,value2):
+    diff = value1 - value2
+    return value1 + diff
 
-# overwrite the section of the background image that has been updated
-background[0:h, 0:w] = composite
+def blemish_gen(image,size,loc,img_size,int_drop):
+    
+    r,c = loc
+    r_min = round(r - size*0.5)
+    r_max = round(r + size*0.5)
+    c_min = round(c - size*0.5)
+    c_max = round(c + size*0.5)
 
-cv2.imwrite('H:/THI- MAPE/Master Thesis/resources/combined.png', background)
+    fn_r_start = 0
+    fn_r_end = size
+    fn_c_start = 0
+    fn_c_end = size
+
+    r_diff = r_max - r_min
+    fn_r_diff = fn_r_end - fn_r_start
+
+    c_diff = c_max - c_min
+    fn_c_diff = fn_c_end - fn_c_start
+
+
+    if r_diff!= fn_r_diff:
+        diff = fn_r_diff - r_diff
+        r_max = r_max + diff
+        roi = image[r_min:r_max,c_min:c_max]
+        print("shape diff1")
+
+    if c_diff!= fn_c_diff:
+        diff = fn_c_diff - c_diff
+        c_max = c_max + diff
+        roi = image[r_min:r_max,c_min:c_max]
+        print("shape diff2")
+
+    print("-----INITIALIZE----)")
+
+    print("ROI dim:",r_min,r_max,c_min,c_max)
+    print("ROI dim:",fn_r_start,fn_r_end,fn_c_start,fn_c_end)
+
+    print("---------)")
+ 
+    
+    
+    fn = gaussian(size,int_drop)
+    fn = np.round_(fn,3)
+    #plt.imshow(fn,cmap='gray')
+    #plt.show()
+
+    if c_min<0:
+        fn_c_start = (-1*c_min)
+        c_min = 0
+    elif c_max>img_size[1]:
+        fn_c_end = size-(c_max-img_size[1])
+        c_max = img_size[1]+1
+
+    if r_min<0:
+        r_min =  0
+        fn_r_start = (-1*r_min)
+    elif r_max>img_size[0]:
+        fn_r_end = size-(r_max-img_size[0])
+        r_max = img_size[0]+1
+
+    roi = image[r_min:r_max,c_min:c_max]
+    #print('ROI shape',roi.shape)
+
+    roi_fn = fn[fn_r_start:fn_r_end,fn_c_start:fn_c_end]
+    #print('fn shape',roi_fn.shape)
+
+    print("-----modified----)")
+
+    print("ROI dim:",r_min,r_max,c_min,c_max)
+    print("ROI dim:",fn_r_start,fn_r_end,fn_c_start,fn_c_end)
+
+    print("---------)")
+ 
+
+    #if roi.shape[0]!= fn.shape[0]:
+        #diff = fn.shape[0]-roi.shape[0]
+        #r_max = r_max + diff
+        #roi = image[r_min:r_max,c_min:c_max]
+        #print("shape diff")
+
+    #if roi.shape[1]!= fn.shape[1]:
+        #diff = fn.shape[1]-roi.shape[1]
+        #c_max = c_max + diff
+        #roi = image[r_min:r_max,c_min:c_max]
+        #[print("shape diff")]
+
+
+    print('ROI shape',roi.shape)
+    print('fn shape',roi_fn.shape)
+
+
+
+    r_roi = roi[:,:,0]
+    r_channel = r_roi * fn[fn_r_start:fn_r_end,fn_c_start:fn_c_end]
+
+    g_roi = roi[:,:,1]
+    g_channel = g_roi * fn[fn_r_start:fn_r_end,fn_c_start:fn_c_end]
+
+    b_roi = roi[:,:,2]
+    b_channel = b_roi * fn[fn_r_start:fn_r_end,fn_c_start:fn_c_end]
+
+    image[r_min:r_max,c_min:c_max,0] = r_channel
+    image[r_min:r_max,c_min:c_max,1] = g_channel
+    image[r_min:r_max,c_min:c_max,2] = b_channel
+
+    #cv2.imwrite('H:/THI- MAPE/Master Thesis/resources/blemished/expjz2.png', image)
+    
+    return image
+
