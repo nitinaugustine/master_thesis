@@ -56,7 +56,7 @@ for file_ in enumerate(os.listdir(path1)):
             y = y * dh
             h = h * dh
             list1.extend([label,x,y,w,h])
-            #print('list1\n',list1)
+            
 
             #print('\nlist 1 -->',list1)
             list2.append(list1)
